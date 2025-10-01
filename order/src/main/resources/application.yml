@@ -1,0 +1,22 @@
+server:
+  port: 8083
+spring:
+  datasource:
+    url: jdbc:h2:mem:orderdb;MODE=LEGACY;DB_CLOSE_DELAY=-1
+    driverClassName: org.h2.Driver
+    username: sa
+    password: ''
+  jpa:
+    hibernate:
+      ddl-auto: update
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+  h2:
+    console:
+      enabled: true
+
+external:
+  client-service: http://localhost:8082
+  product-service: http://localhost:8081
