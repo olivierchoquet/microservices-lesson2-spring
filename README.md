@@ -95,6 +95,166 @@ You should see:
 - GET /orders?clientId=1 — list by client 
 - GET /orders/{id} — get one
 
+---
+
+## 🧪 Testing the synchronous flow
+
+All calls go through the **API Gateway on port 8080**.  
+Make sure the four services are running first.
+
+### 0) Check the preloaded data
+
+Product and Client each preload their H2 database from a `data.sql`, so there is nothing to create before testing.
+
+```bash
+curl http://localhost:8080/clients
+```
+
+```bash
+curl http://localhost:8080/products
+```
+
+Note the ids and stock levels returned — the examples below assume client `1`, products `1` and `2`. Adjust them to match your `data.sql`.
+
+> Since the databases are in-memory, restarting a service resets it to its `data.sql` state. Handy: restart Product to reset stock between test runs.
+
+---
+
+### 1) Nominal case
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":1,"quantity":2},{"productId":2,"quantity":1}]}'
+```
+
+**Expected:** `201 Created` with the order payload.
+
+Then check that the stock was decremented **immediately**:
+
+```bash
+curl http://localhost:8080/products/1
+```
+
+**Expected:** `stock` dropped by 2 right away.  
+This is the proof the reservation is synchronous — in an async version the stock would still read the old value for a few milliseconds.
+
+---
+
+### 2) Error mapping
+
+| Case | Expected status | Body code |
+| --- | --- | --- |
+| Missing client | `404` | `CLIENT_NOT_FOUND` |
+| Missing product | `404` | `PRODUCT_NOT_FOUND` |
+| Insufficient stock | `409` | `INSUFFICIENT_STOCK` |
+
+**Missing client**
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":999,"items":[{"productId":1,"quantity":1}]}'
+```
+
+**Missing product**
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":999,"quantity":1}]}'
+```
+
+**Insufficient stock**
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":2,"quantity":100}]}'
+```
+
+> No `500` should ever appear on these flows.
+
+---
+
+### 3) No partial reservation
+
+The key regression test. A multi-item order where the **second** item fails must not consume stock for the first one.
+
+**3a — second item out of stock**
+
+```bash
+curl http://localhost:8080/products/1
+```
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":1,"quantity":1},{"productId":2,"quantity":100}]}'
+```
+
+```bash
+curl http://localhost:8080/products/1
+```
+
+**Expected:** `409`, and the stock of product `1` is **unchanged** between the two reads.
+
+**3b — second item does not exist**
+
+```bash
+curl http://localhost:8080/products/1
+```
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":1,"quantity":1},{"productId":999,"quantity":1}]}'
+```
+
+```bash
+curl http://localhost:8080/products/1
+```
+
+**Expected:** `404`, and the stock of product `1` is **unchanged**.
+
+Both cases rely on the two-phase logic in `OrderService.create()`: every product is fetched and validated **before** any reservation is issued. `@Transactional` only rolls back the local H2 database — an HTTP call already sent to the Product service cannot be undone.
+
+---
+
+### 4) Temporal coupling
+
+Stop the **Product** service, then:
+
+```bash
+curl -i -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":1,"items":[{"productId":1,"quantity":1}]}'
+```
+
+**Expected:** the request fails immediately and no order is created.
+
+This is the defining trade-off of the synchronous design: Order cannot accept anything while a downstream service is unavailable. An async version would accept the order with a `PENDING` status and reconcile later — trading immediate consistency for availability.
+
+---
+
+### 5) Reading the orders
+
+```bash
+curl http://localhost:8080/orders
+```
+
+```bash
+curl http://localhost:8080/orders?clientId=1
+```
+
+```bash
+curl http://localhost:8080/orders/1
+```
+
+Also verify in the H2 console that **no order row** was created for any of the failing cases above.
+
+---
+
 ## H2 consoles (dev only)
 
 - Product: http://localhost:8081/h2-console
@@ -104,9 +264,18 @@ You should see:
 ## 🧠 Design notes
 
 - Sync orchestration: Order service uses WebClient to fetch Client and Product, then reserves stock synchronously. 
+- Validate-then-act: `OrderService.create()` resolves the client, then fetches **and checks** every product before issuing any reservation. Anything that can fail happens before anything that cannot be undone.
 - Error mapping:
   - Missing client/product → 404 
   - Insufficient stock → 409 
   - Avoid generic 500 on normal flows.
 - DI / layering: Controller → Service (port-in) → Repository port (port-out) → JPA adapter (infrastructure). 
-- Databases: Separate H2 in-memory per service (unique JDBC URLs); optional data.sql preload.
+- Databases: Separate H2 in-memory per service (unique JDBC URLs); `data.sql` preload for Product and Client.
+
+## ⚠️ Known limitations
+
+- **No distributed transaction.** If a reservation ever succeeded and a later one failed, the reserved stock would not be released. The two-phase validation avoids this in practice, but the guarantee is not absolute — a compensating `release` call would be needed for that.
+- **Race window.** Between validation and reservation, a concurrent order can consume the stock. Solving this properly requires locking or an atomic multi-product reservation on the Product side.
+- **Duplicate product ids.** Two lines referencing the same `productId` are validated independently, so their combined quantity is not checked against the stock.
+
+These are exactly the constraints the async version addresses.

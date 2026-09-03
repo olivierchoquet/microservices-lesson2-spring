@@ -5,8 +5,11 @@ import com.ipl.order.domain.ClientOrder;
 import com.ipl.order.domain.OrderItem;
 import com.ipl.order.external.ClientClient;
 import com.ipl.order.external.ProductClient;
+import com.ipl.order.external.ProductClient.ProductDto;
 import com.ipl.order.repository.OrderRepository;
 import jakarta.persistence.EntityNotFoundException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -44,7 +47,19 @@ public class OrderService {
 
     @Transactional
     public OrderView create(OrderDtos.Create req){
+        // check client existence -> exception if not
         ClientClient.ClientDto client = clientClient.getClient(req.clientId);
+
+        // check all products existence and stock sufficient
+        Map<Long, ProductDto> products = new LinkedHashMap<>();
+        for (OrderDtos.Item it : req.items){
+            ProductClient.ProductDto p = productClient.getProduct(it.productId);
+            if (p.stock < it.quantity) {
+                throw new RuntimeException("INSUFFICIENT_STOCK");
+            }
+            products.put(it.productId, p);
+        }
+
         ClientOrder order = new ClientOrder(client.id);
 
         for (OrderDtos.Item it : req.items){

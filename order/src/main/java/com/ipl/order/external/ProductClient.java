@@ -1,4 +1,5 @@
 package com.ipl.order.external;
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,7 @@ public class ProductClient {
                 .bodyValue(req)
                 .retrieve()
                 .onStatus(status -> status.value() == 409,
-                        resp -> Mono.error(new RuntimeException("INSUFFICIENT_STOCK")))
+                        resp -> Mono.error(new EntityNotFoundException("INSUFFICIENT_STOCK")))
                 .onStatus(HttpStatusCode::is4xxClientError,
                         resp -> Mono.error(new RuntimeException("PRODUCT_RESERVE_BAD_REQUEST")))
                 .onStatus(HttpStatusCode::is5xxServerError,

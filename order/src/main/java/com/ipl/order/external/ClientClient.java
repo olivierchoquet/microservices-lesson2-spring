@@ -1,4 +1,5 @@
 package com.ipl.order.external;
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,7 @@ public class ClientClient {
                 .retrieve()
                 // 404 → map to domain-friendly error
                 .onStatus(status -> status.value() == 404,
-                        resp -> Mono.error(new RuntimeException("CLIENT_NOT_FOUND")))
+                        resp -> Mono.error(new EntityNotFoundException("CLIENT_NOT_FOUND")))
                 // any other 4xx
                 .onStatus(HttpStatusCode::is4xxClientError,
                         resp -> Mono.error(new RuntimeException("CLIENT_BAD_REQUEST")))
@@ -35,6 +36,5 @@ public class ClientClient {
     public static class ClientDto {
         public Long id;
         public String name;
-        public String address;
     }
 }
