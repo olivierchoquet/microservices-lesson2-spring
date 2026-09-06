@@ -183,17 +183,3 @@ curl -i -X POST http://localhost:8080/orders \
 - Client: http://localhost:8082/h2-console
 - Order: http://localhost:8083/h2-console
 
-## 🧠 Design notes
-
-- Sync orchestration: Order service uses WebClient to fetch Client and Product, then reserves stock synchronously. 
-- Validate-then-act: `OrderService.create()` resolves the client, then fetches **and checks** every product before issuing any reservation. Anything that can fail happens before anything that cannot be undone.
-- Error mapping:
-  - Missing client/product → 404 
-  - Insufficient stock → 409 
-  - Avoid generic 500 on normal flows.
-- DI / layering: Controller → Service (port-in) → Repository port (port-out) → JPA adapter (infrastructure). 
-- Databases: Separate H2 in-memory per service (unique JDBC URLs); `data.sql` preload for Product and Client.
-
-
-
-These are exactly the constraints the async version addresses.
