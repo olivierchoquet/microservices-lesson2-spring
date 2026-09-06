@@ -173,6 +173,20 @@ curl -i -X POST http://localhost:8080/orders \
 
 > No `500` should ever appear on these flows.
 
+### 3) Explore further
+
+The cases below are not documented: run them, observe what happens
+across **all** services, and write down anything that surprises you.
+
+- An order with two lines where only the second one fails
+- An order containing the same product twice
+- An order with an empty item list
+- The exact same request sent twice in a row
+- Any of the above while one of the services is stopped
+
+For each one, check the state afterwards: the order, the stock, and
+the status code returned to the caller.
+
 ---
 
 ## H2 consoles (dev only)
