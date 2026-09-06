@@ -33,10 +33,8 @@ microservices-lesson2/
 
 ### 1) Clone
 
-```
-git clone https://github.com/Aktorius/microservices-lesson2-spring.git
-cd microservices-lesson2
-```
+1. Clone this repository
+   
 ### 2) Run the Services
 
 1. Open microservices-lesson2 in IntelliJ → Maven auto-import detects 4 modules. 
