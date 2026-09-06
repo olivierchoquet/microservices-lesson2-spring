@@ -194,10 +194,6 @@ curl -i -X POST http://localhost:8080/orders \
 - DI / layering: Controller → Service (port-in) → Repository port (port-out) → JPA adapter (infrastructure). 
 - Databases: Separate H2 in-memory per service (unique JDBC URLs); `data.sql` preload for Product and Client.
 
-## ⚠️ Known limitations
 
-- **No distributed transaction.** If a reservation ever succeeded and a later one failed, the reserved stock would not be released. The two-phase validation avoids this in practice, but the guarantee is not absolute — a compensating `release` call would be needed for that.
-- **Race window.** Between validation and reservation, a concurrent order can consume the stock. Solving this properly requires locking or an atomic multi-product reservation on the Product side.
-- **Duplicate product ids.** Two lines referencing the same `productId` are validated independently, so their combined quantity is not checked against the stock.
 
 These are exactly the constraints the async version addresses.
